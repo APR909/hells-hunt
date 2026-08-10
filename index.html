@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hell's Hunt — Prototipo</title>
+<meta name="description" content="Un Duck Hunt infernal: caza demonios voladores antes de que escapen. Hecho desde cero en JavaScript y Canvas.">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://apr909.github.io/hells-hunt/">
+<meta property="og:title" content="Hell's Hunt — Duck Hunt infernal">
+<meta property="og:description" content="Caza demonios voladores antes de que escapen, con rondas cada vez más difíciles y munición limitada.">
+<meta property="og:image" content="https://apr909.github.io/hells-hunt/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Hell's Hunt — Duck Hunt infernal">
+<meta name="twitter:description" content="Caza demonios voladores antes de que escapen, con rondas cada vez más difíciles y munición limitada.">
+<meta name="twitter:image" content="https://apr909.github.io/hells-hunt/assets/og-image.png">
+
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="#"><span class="brand-mark">AP</span><span class="brand-name">Hell's <em>Hunt</em></span></a>
+  <span class="build-tag mono">// prototipo · caza de demonios</span>
+</header>
+
+<!-- TITLE SCREEN -->
+<div id="titleScreen" class="overlay">
+  <div class="overlay-card title-card">
+    <div class="demon-logo-wrap">
+      <img id="titleDemonImg" src="assets/demon-fly1.png" alt="" class="demon-logo">
+    </div>
+    <h1 class="title-huge">HELL'S HUNT</h1>
+    <p class="eyebrow mono title-sub">// apunta · dispara · no dejes que escapen</p>
+    <button id="btnStart" class="btn-wide btn-wide-primary">Empezar caza</button>
+  </div>
+</div>
+
+<!-- GAME OVER -->
+<div id="gameOverScreen" class="overlay hidden">
+  <div class="overlay-card title-card">
+    <p class="eyebrow mono">// caza terminada</p>
+    <h1 class="title-huge" style="font-size:2.2rem;">SE ACABÓ</h1>
+    <p class="hud-note" id="finalScoreText">Puntuación: 0</p>
+    <button id="btnRetry" class="btn-wide btn-wide-primary">Volver a intentarlo</button>
+  </div>
+</div>
+
+<main class="stage hidden" id="gameStage">
+  <div class="face-panel">
+    <div class="face-slot">
+      <img id="faceImg" src="assets/face-idle.png" alt="" class="face-img">
+    </div>
+    <p class="face-label mono">visor</p>
+  </div>
+
+  <div class="scene-wrap">
+    <canvas id="scene" aria-label="Zona de caza"></canvas>
+    <div id="missFlash" class="miss-flash">¡SE ESCAPÓ!</div>
+    <div id="roundFlash" class="round-flash"></div>
+  </div>
+
+  <aside class="hud">
+    <div class="hud-block">
+      <p class="hud-label mono">puntuación</p>
+      <p id="scoreValue" class="hud-value">0</p>
+    </div>
+    <div class="hud-block">
+      <p class="hud-label mono">ronda</p>
+      <p id="roundValue" class="hud-value">1</p>
+    </div>
+    <div class="hud-block">
+      <p class="hud-label mono">munición</p>
+      <div id="ammoDots" class="ammo-dots"></div>
+    </div>
+    <div class="hud-block">
+      <p class="hud-label mono">fallos</p>
+      <div id="missDots" class="miss-dots"></div>
+    </div>
+    <div class="hud-block instructions">
+      <p class="hud-label mono">controles</p>
+      <ul>
+        <li>Clic para disparar donde apunta la mira</li>
+        <li>3 balas por ronda</li>
+        <li>Si un demonio escapa, cuenta como fallo</li>
+        <li>3 fallos y se acaba la caza</li>
+      </ul>
+    </div>
+  </aside>
+</main>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
