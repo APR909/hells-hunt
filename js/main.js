@@ -39,8 +39,10 @@ setupLighting(scene);
 
 const gunScene = new THREE.Scene();
 const gunCamera = new THREE.PerspectiveCamera(50, 1, 0.05, 10);
-const { gun, flash, flashLight, restX, restY, restZ } = buildGun();
+const { gun, flash, flashLight, restX, restY, restZ, restRotX, restRotY } = buildGun();
 let recoilKick = 0;
+let aimYaw = 0;
+let aimPitch = 0;
 
 // periodic corridor "bend" — the camera eases into a shallow turn every so
 // often, holds it briefly, then straightens back out
@@ -381,7 +383,13 @@ function loop(now) {
   gun.position.y = restY + breatheY - recoilKick * 0.22;
   gun.position.z = restZ + recoilKick * 0.3;
   gun.position.x = restX + breatheX;
-  gun.rotation.x = 0.02 - recoilKick * 0.16;
+
+  // aim tracking: the gun swings to follow the crosshair, smoothed so it
+  // trails slightly behind fast mouse movement instead of snapping
+  aimYaw += (mouseNDC.x * 0.34 - aimYaw) * Math.min(1, dt * 9);
+  aimPitch += (mouseNDC.y * 0.24 - aimPitch) * Math.min(1, dt * 9);
+  gun.rotation.y = restRotY + aimYaw;
+  gun.rotation.x = restRotX - recoilKick * 0.16 + aimPitch;
 
   const firing = performance.now() < gunFireUntil;
   if (!firing && flash.scale.x > 0.001) {

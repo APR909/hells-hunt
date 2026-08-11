@@ -113,5 +113,9 @@ export function buildGun() {
   gun.rotation.x = 0.02;
   gun.scale.setScalar(0.95);
 
-  return { gun, flash, flashLight, restX: gun.position.x, restY: gun.position.y, restZ: gun.position.z };
+  return {
+    gun, flash, flashLight,
+    restX: gun.position.x, restY: gun.position.y, restZ: gun.position.z,
+    restRotX: gun.rotation.x, restRotY: gun.rotation.y,
+  };
 }
