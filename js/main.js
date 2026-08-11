@@ -1,15 +1,15 @@
+import * as THREE from "./vendor/three.module.min.js";
+import { buildCorridor, setupLighting } from "./corridor.js";
+import { buildGun } from "./gun3d.js";
 import { playShot, playHit, playEmptyClick, playEscape, playRoundStart, playGameOver } from "./sound.js";
 
-const CANVAS_W = 1000;
-const CANVAS_H = 600;
-const HIT_RADIUS = 30;
 const AMMO_PER_ROUND = 3;
 const MAX_MISSES = 3;
+const SPRITE_SCALE = 2.1;
+const ESCAPE_Z = 1.5;
 
+const canvasWrap = document.getElementById("sceneWrap");
 const canvas = document.getElementById("scene");
-canvas.width = CANVAS_W;
-canvas.height = CANVAS_H;
-const ctx = canvas.getContext("2d");
 
 const titleScreenEl = document.getElementById("titleScreen");
 const gameOverScreenEl = document.getElementById("gameOverScreen");
@@ -23,54 +23,72 @@ const roundFlashEl = document.getElementById("roundFlash");
 const finalScoreTextEl = document.getElementById("finalScoreText");
 const titleDemonImg = document.getElementById("titleDemonImg");
 const faceImgEl = document.getElementById("faceImg");
+const crosshairEl = document.getElementById("crosshair");
 
-const sprites = {};
-["fly1", "fly2", "hit"].forEach((name) => {
-  const img = new Image();
-  img.src = `assets/demon-${name}.png`;
-  sprites[name] = img;
-});
-const guns = {};
-["idle", "fire"].forEach((name) => {
-  const img = new Image();
-  img.src = `assets/gun-${name}.png`;
-  guns[name] = img;
-});
+// ---------- three.js setup ----------
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.autoClear = false;
 
-let mouseX = CANVAS_W / 2;
-let mouseY = CANVAS_H / 2;
-canvas.addEventListener("mousemove", (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const scale = CANVAS_W / rect.width;
-  mouseX = (e.clientX - rect.left) * scale;
-  mouseY = (e.clientY - rect.top) * scale;
-});
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 100);
+camera.position.set(0, 0, 2);
 
-let faceLockUntil = 0;
-function setFace(name, holdMs) {
-  const src = `assets/face-${name}.png`;
-  if (faceImgEl.getAttribute("src") !== src) faceImgEl.src = src;
-  faceLockUntil = holdMs ? performance.now() + holdMs : 0;
+const corridor = buildCorridor(scene);
+setupLighting(scene);
+
+const gunScene = new THREE.Scene();
+const gunCamera = new THREE.PerspectiveCamera(50, 1, 0.05, 10);
+const { gun, flash, flashLight, restY, restZ } = buildGun();
+gunScene.add(gun);
+const gunKeyLight = new THREE.DirectionalLight(0xffb070, 3.2);
+gunKeyLight.position.set(-1, 1.5, 1.5);
+gunScene.add(gunKeyLight);
+const gunFillLight = new THREE.DirectionalLight(0xff6a30, 1.4);
+gunFillLight.position.set(1, -0.5, 1);
+gunScene.add(gunFillLight);
+gunScene.add(new THREE.AmbientLight(0x603520, 2.2));
+
+function resize() {
+  const w = canvasWrap.clientWidth;
+  const h = canvasWrap.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  gunCamera.aspect = w / h;
+  gunCamera.updateProjectionMatrix();
 }
+window.addEventListener("resize", resize);
 
-let gunFireUntil = 0;
-function triggerGunFire() {
-  gunFireUntil = performance.now() + 130;
+// ---------- sprite textures ----------
+const texLoader = new THREE.TextureLoader();
+function loadPixelTexture(path) {
+  const tex = texLoader.load(path);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
+const demonTex = {
+  fly1: loadPixelTexture("assets/demon-fly1.png"),
+  fly2: loadPixelTexture("assets/demon-fly2.png"),
+  hit: loadPixelTexture("assets/demon-hit.png"),
+};
 
-// title screen wing-flap animation
+// ---------- title screen wing-flap ----------
 let titleFlap = false;
 const titleFlapTimer = setInterval(() => {
   titleFlap = !titleFlap;
   titleDemonImg.src = titleFlap ? "assets/demon-fly2.png" : "assets/demon-fly1.png";
 }, 220);
 
+// ---------- game state ----------
 let score = 0;
 let round = 1;
 let ammo = AMMO_PER_ROUND;
 let misses = 0;
 let demons = [];
-let roundState = "idle"; // "spawning" | "active" | "resolving"
+let roundState = "idle";
 let gameActive = false;
 
 function demonCountForRound(r) {
@@ -80,31 +98,43 @@ function demonCountForRound(r) {
 }
 
 function spawnDemon(delay = 0) {
-  const speed = 70 + round * 9 + Math.random() * 20;
-  const startX = 120 + Math.random() * (CANVAS_W - 240);
+  const speed = 11 + round * 1.1 + Math.random() * 2.2;
+  const baseX = -4 + Math.random() * 8;
+  const baseY = -1.8 + Math.random() * 3.2;
+
+  const material = new THREE.SpriteMaterial({ map: demonTex.fly1, transparent: true });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(SPRITE_SCALE, SPRITE_SCALE, 1);
+  sprite.position.set(baseX, baseY, -42 - Math.random() * 6);
+  scene.add(sprite);
+
   demons.push({
-    baseX: startX,
-    x: startX,
-    y: CANVAS_H + 30,
-    vy: -speed,
-    wobbleAmp: 25 + Math.random() * 25,
-    wobbleFreq: 1.2 + Math.random() * 1.2,
+    sprite,
+    baseX,
+    baseY,
+    vz: speed,
+    wobbleAmp: 0.6 + Math.random() * 0.7,
+    wobbleFreq: 1.1 + Math.random() * 1.1,
     wobblePhase: Math.random() * Math.PI * 2,
     t: -delay,
     wingPhase: 0,
-    state: "flying", // "flying" | "hit" | "gone"
+    state: "flying",
     hitAt: 0,
-    spawnDelay: delay,
   });
+}
+
+function clearDemons() {
+  demons.forEach((d) => scene.remove(d.sprite));
+  demons = [];
 }
 
 function startRound() {
   ammo = AMMO_PER_ROUND;
-  demons = [];
+  clearDemons();
   roundState = "spawning";
   roundValueEl.textContent = round;
   const count = demonCountForRound(round);
-  for (let i = 0; i < count; i++) spawnDemon(i * 0.5);
+  for (let i = 0; i < count; i++) spawnDemon(i * 0.6);
   playRoundStart();
   flashRound(`RONDA ${round}`);
   updateHud();
@@ -115,7 +145,6 @@ function flashRound(text) {
   roundFlashEl.classList.add("show");
   setTimeout(() => roundFlashEl.classList.remove("show"), 900);
 }
-
 function flashMiss() {
   missFlashEl.classList.add("show");
   setTimeout(() => missFlashEl.classList.remove("show"), 700);
@@ -131,33 +160,62 @@ function updateHud() {
     .join("");
 }
 
-canvas.addEventListener("click", (e) => {
-  if (!gameActive || roundState !== "spawning" && roundState !== "active") return;
+// ---------- face reactions ----------
+let faceLockUntil = 0;
+function setFace(name, holdMs) {
+  const src = `assets/face-${name}.png`;
+  if (faceImgEl.getAttribute("src") !== src) faceImgEl.src = src;
+  faceLockUntil = holdMs ? performance.now() + holdMs : 0;
+}
+
+// ---------- gun firing animation ----------
+let gunFireUntil = 0;
+function triggerGunFire() {
+  gunFireUntil = performance.now() + 130;
+  flash.scale.set(1, 1, 1);
+  flashLight.intensity = 4;
+}
+
+// ---------- crosshair + raycasting ----------
+let mouseNDC = new THREE.Vector2(0, 0);
+const raycaster = new THREE.Raycaster();
+
+canvas.addEventListener("mousemove", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  mouseNDC.x = (mx / rect.width) * 2 - 1;
+  mouseNDC.y = -(my / rect.height) * 2 + 1;
+  crosshairEl.style.left = `${mx}px`;
+  crosshairEl.style.top = `${my}px`;
+});
+
+canvas.addEventListener("click", () => {
+  if (!gameActive || (roundState !== "spawning" && roundState !== "active")) return;
   if (ammo <= 0) {
     playEmptyClick();
     return;
   }
-  const rect = canvas.getBoundingClientRect();
-  const scale = CANVAS_W / rect.width;
-  const cx = (e.clientX - rect.left) * scale;
-  const cy = (e.clientY - rect.top) * scale;
 
   ammo--;
   playShot();
   triggerGunFire();
   updateHud();
 
+  raycaster.setFromCamera(mouseNDC, camera);
+  const flyingSprites = demons.filter((d) => d.state === "flying").map((d) => d.sprite);
+  const hits = raycaster.intersectObjects(flyingSprites);
+
   let hit = false;
-  for (const d of demons) {
-    if (d.state !== "flying") continue;
-    const dist = Math.hypot(d.x - cx, d.y - cy);
-    if (dist < HIT_RADIUS) {
-      d.state = "hit";
-      d.hitAt = performance.now();
+  if (hits.length > 0) {
+    const target = demons.find((d) => d.sprite === hits[0].object);
+    if (target) {
+      target.state = "hit";
+      target.hitAt = performance.now();
+      target.sprite.material.map = demonTex.hit;
       score += 10 + round * 2;
       playHit();
       hit = true;
-      break;
     }
   }
   setFace(hit ? "happy" : "hurt", 500);
@@ -202,7 +260,7 @@ function resetGame() {
   score = 0;
   round = 1;
   misses = 0;
-  demons = [];
+  clearDemons();
   gameOverScreenEl.classList.add("hidden");
   gameActive = true;
   setFace("idle");
@@ -213,42 +271,50 @@ document.getElementById("btnStart").addEventListener("click", () => {
   clearInterval(titleFlapTimer);
   titleScreenEl.classList.add("hidden");
   gameStageEl.classList.remove("hidden");
+  resize();
   resetGame();
 });
 document.getElementById("btnRetry").addEventListener("click", resetGame);
 
+// ---------- render loop ----------
 let lastTime = performance.now();
 let elapsed = 0;
+
 function loop(now) {
-  const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+  const dt = Math.min((now - lastTime) / 1000, 1 / 20);
   lastTime = now;
   elapsed += dt;
 
-  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-  drawBackground(elapsed);
+  corridor.update(dt, elapsed);
 
   if (gameActive) {
     demons.forEach((d) => {
       if (d.state === "gone") return;
       d.t += dt;
-      if (d.t < 0) return; // staggered spawn delay not reached yet
+      if (d.t < 0) return;
 
       if (d.state === "flying") {
-        d.y += d.vy * dt;
-        d.x = d.baseX + Math.sin(d.t * d.wobbleFreq + d.wobblePhase) * d.wobbleAmp;
+        d.sprite.position.z += d.vz * dt;
+        d.sprite.position.x = d.baseX + Math.sin(d.t * d.wobbleFreq + d.wobblePhase) * d.wobbleAmp;
+        d.sprite.position.y = d.baseY + Math.cos(d.t * d.wobbleFreq * 0.8 + d.wobblePhase) * d.wobbleAmp * 0.5;
         d.wingPhase += dt * 11;
-        if (d.y < -30 || d.x < -30 || d.x > CANVAS_W + 30) {
+        d.sprite.material.map = Math.floor(d.wingPhase) % 2 === 0 ? demonTex.fly1 : demonTex.fly2;
+        if (d.sprite.position.z > ESCAPE_Z) {
           d.state = "gone";
           d.escaped = true;
+          scene.remove(d.sprite);
         }
       } else if (d.state === "hit") {
-        d.y += 140 * dt; // fall
-        d.x += Math.sin(d.t * 20) * 40 * dt;
-        if (performance.now() - d.hitAt > 500) d.state = "gone";
+        d.sprite.position.y -= 3.2 * dt;
+        d.sprite.material.rotation += dt * 6;
+        const age = performance.now() - d.hitAt;
+        d.sprite.material.opacity = Math.max(0, 1 - age / 500);
+        if (age > 500) {
+          d.state = "gone";
+          scene.remove(d.sprite);
+        }
       }
     });
-
-    demons.forEach((d) => drawDemon(d));
 
     if (roundState === "spawning" || roundState === "active") {
       roundState = "active";
@@ -260,107 +326,22 @@ function loop(now) {
     }
   }
 
-  drawGunHud();
-  drawCrosshair();
+  // gun recoil + flash decay
+  const firing = performance.now() < gunFireUntil;
+  gun.position.y = restY + (firing ? -0.06 : 0);
+  gun.position.z = restZ + (firing ? 0.08 : 0);
+  if (!firing && flash.scale.x > 0.001) {
+    flash.scale.multiplyScalar(0.7);
+    flashLight.intensity *= 0.7;
+  }
+
+  renderer.clear();
+  renderer.render(scene, camera);
+  renderer.clearDepth();
+  renderer.render(gunScene, gunCamera);
+
   requestAnimationFrame(loop);
 }
+
+resize();
 requestAnimationFrame(loop);
-
-function drawBackground(t) {
-  ctx.fillStyle = "#0a0403";
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
-  const vx = CANVAS_W / 2;
-  const vy = CANVAS_H * 0.4;
-
-  // perspective corridor edges converging to the vanishing point
-  ctx.strokeStyle = "rgba(180,60,30,0.3)";
-  ctx.lineWidth = 2;
-  [[0, 0], [CANVAS_W, 0], [CANVAS_W, CANVAS_H], [0, CANVAS_H]].forEach(([cx, cy]) => {
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(vx, vy);
-    ctx.stroke();
-  });
-
-  // floor/ceiling cross-struts, receding into the distance
-  ctx.strokeStyle = "rgba(200,70,35,0.22)";
-  for (let i = 1; i <= 5; i++) {
-    const p = ((t * 0.35 + i / 5) % 1);
-    const w = p * CANVAS_W * 1.3;
-    const h = p * CANVAS_H * 1.3;
-    ctx.strokeRect(vx - w / 2, vy - h / 2, w, h);
-  }
-
-  // glowing core at the vanishing point
-  const coreGrad = ctx.createRadialGradient(vx, vy, 0, vx, vy, 70);
-  coreGrad.addColorStop(0, "rgba(255,140,60,0.55)");
-  coreGrad.addColorStop(1, "rgba(255,140,60,0)");
-  ctx.fillStyle = coreGrad;
-  ctx.beginPath();
-  ctx.arc(vx, vy, 70, 0, Math.PI * 2);
-  ctx.fill();
-
-  // drifting embers
-  ctx.fillStyle = "rgba(255,120,50,0.5)";
-  for (let i = 0; i < 22; i++) {
-    const ex = (i * 137 + Math.sin(t * 0.4 + i) * 20) % CANVAS_W;
-    const ey = (i * 251 + t * 30) % CANVAS_H;
-    ctx.beginPath();
-    ctx.arc(ex, ey, 1.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // ground silhouette
-  ctx.fillStyle = "#08030299";
-  ctx.beginPath();
-  ctx.moveTo(0, CANVAS_H);
-  ctx.lineTo(0, CANVAS_H - 50);
-  for (let x = 0; x <= CANVAS_W; x += 40) {
-    ctx.lineTo(x, CANVAS_H - 50 - Math.sin(x * 0.01) * 12);
-  }
-  ctx.lineTo(CANVAS_W, CANVAS_H);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawDemon(d) {
-  if (d.t < 0) return;
-  const sprite = d.state === "hit" ? sprites.hit : Math.floor(d.wingPhase) % 2 === 0 ? sprites.fly1 : sprites.fly2;
-  if (!sprite.complete || sprite.naturalWidth === 0) return;
-  const scale = 2.2;
-  const w = sprite.naturalWidth * scale;
-  const h = sprite.naturalHeight * scale;
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  if (d.state === "hit") {
-    ctx.translate(d.x, d.y);
-    ctx.rotate(Math.min(0.6, (performance.now() - d.hitAt) / 400));
-    ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
-  } else {
-    ctx.drawImage(sprite, d.x - w / 2, d.y - h / 2, w, h);
-  }
-  ctx.restore();
-}
-
-function drawGunHud() {
-  const firing = performance.now() < gunFireUntil;
-  const sprite = firing ? guns.fire : guns.idle;
-  if (!sprite.complete || sprite.naturalWidth === 0) return;
-  const scale = 1.9;
-  const w = sprite.naturalWidth * scale;
-  const h = sprite.naturalHeight * scale;
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(sprite, CANVAS_W / 2 - w / 2 + 30, CANVAS_H - h + 40, w, h);
-  ctx.restore();
-}
-
-function drawCrosshair() {
-  ctx.save();
-  ctx.fillStyle = "#39ff6a";
-  ctx.shadowColor = "#39ff6a";
-  ctx.shadowBlur = 4;
-  ctx.fillRect(mouseX - 1.5, mouseY - 1.5, 3, 3);
-  ctx.restore();
-}
