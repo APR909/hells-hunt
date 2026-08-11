@@ -108,8 +108,8 @@ export function buildGun() {
   rightHand.position.set(0.05, -0.3, 0.22);
   gun.add(rightHand);
 
-  gun.position.set(1.0, -1.05, -2.9);
-  gun.rotation.y = -0.22;
+  gun.position.set(0, -1.05, -2.9);
+  gun.rotation.y = 0;
   gun.rotation.x = 0.02;
   gun.scale.setScalar(0.95);
 
