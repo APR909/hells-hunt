@@ -39,7 +39,15 @@ setupLighting(scene);
 
 const gunScene = new THREE.Scene();
 const gunCamera = new THREE.PerspectiveCamera(50, 1, 0.05, 10);
-const { gun, flash, flashLight, restY, restZ } = buildGun();
+const { gun, flash, flashLight, restX, restY, restZ } = buildGun();
+let recoilKick = 0;
+
+// periodic corridor "bend" — the camera eases into a shallow turn every so
+// often, holds it briefly, then straightens back out
+let turnAngle = 0;
+let turnTarget = 0;
+let turnHoldUntil = 0;
+let nextTurnAt = 5 + Math.random() * 5;
 gunScene.add(gun);
 const gunKeyLight = new THREE.DirectionalLight(0xffb070, 3.2);
 gunKeyLight.position.set(-1, 1.5, 1.5);
@@ -73,6 +81,9 @@ const demonTex = {
   fly1: loadPixelTexture("assets/demon-fly1.png"),
   fly2: loadPixelTexture("assets/demon-fly2.png"),
   hit: loadPixelTexture("assets/demon-hit.png"),
+  walk1: loadPixelTexture("assets/demon-walk1.png"),
+  walk2: loadPixelTexture("assets/demon-walk2.png"),
+  walkHit: loadPixelTexture("assets/demon-walk-hit.png"),
 };
 
 // ---------- title screen wing-flap ----------
@@ -97,28 +108,36 @@ function demonCountForRound(r) {
   return 3;
 }
 
+const FLOOR_Y = -3.7;
+
 function spawnDemon(delay = 0) {
   const speed = 11 + round * 1.1 + Math.random() * 2.2;
+  const isWalking = Math.random() < 0.4;
   const baseX = -4 + Math.random() * 8;
-  const baseY = -1.8 + Math.random() * 3.2;
+  const baseY = isWalking ? FLOOR_Y : -1.8 + Math.random() * 3.2;
 
-  const material = new THREE.SpriteMaterial({ map: demonTex.fly1, transparent: true });
+  const material = new THREE.SpriteMaterial({ map: isWalking ? demonTex.walk1 : demonTex.fly1, transparent: true });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(SPRITE_SCALE, SPRITE_SCALE, 1);
+  // walk sprites are 26x36 (taller than wide), fly sprites are 30x24 (wider than tall) —
+  // scale non-uniformly so neither type looks squashed or stretched
+  if (isWalking) sprite.scale.set(SPRITE_SCALE * 0.72, SPRITE_SCALE, 1);
+  else sprite.scale.set(SPRITE_SCALE * 1.25, SPRITE_SCALE, 1);
   sprite.position.set(baseX, baseY, -42 - Math.random() * 6);
   scene.add(sprite);
 
   demons.push({
     sprite,
+    type: isWalking ? "walking" : "flying",
     baseX,
     baseY,
-    vz: speed,
-    wobbleAmp: 0.6 + Math.random() * 0.7,
-    wobbleFreq: 1.1 + Math.random() * 1.1,
-    wobblePhase: Math.random() * Math.PI * 2,
+    vz: speed * (isWalking ? 0.85 : 1),
+    // erratic "wander" target — re-picked periodically instead of a smooth sine wave
+    wanderX: baseX,
+    wanderNextAt: -delay + 0.15 + Math.random() * 0.35,
+    wobbleAmp: isWalking ? 1.4 + Math.random() * 1.0 : 0.9 + Math.random() * 1.0,
     t: -delay,
     wingPhase: 0,
-    state: "flying",
+    state: "active",
     hitAt: 0,
   });
 }
@@ -172,6 +191,7 @@ function setFace(name, holdMs) {
 let gunFireUntil = 0;
 function triggerGunFire() {
   gunFireUntil = performance.now() + 130;
+  recoilKick = 1;
   flash.scale.set(1, 1, 1);
   flashLight.intensity = 4;
 }
@@ -203,7 +223,7 @@ canvas.addEventListener("click", () => {
   updateHud();
 
   raycaster.setFromCamera(mouseNDC, camera);
-  const flyingSprites = demons.filter((d) => d.state === "flying").map((d) => d.sprite);
+  const flyingSprites = demons.filter((d) => d.state === "active").map((d) => d.sprite);
   const hits = raycaster.intersectObjects(flyingSprites);
 
   let hit = false;
@@ -212,7 +232,7 @@ canvas.addEventListener("click", () => {
     if (target) {
       target.state = "hit";
       target.hitAt = performance.now();
-      target.sprite.material.map = demonTex.hit;
+      target.sprite.material.map = target.type === "walking" ? demonTex.walkHit : demonTex.hit;
       score += 10 + round * 2;
       playHit();
       hit = true;
@@ -287,18 +307,46 @@ function loop(now) {
 
   corridor.update(dt, elapsed);
 
+  // occasional corridor bend: turn a little one way, hold, then straighten
+  if (turnTarget === 0 && elapsed > nextTurnAt) {
+    turnTarget = (Math.random() < 0.5 ? -1 : 1) * (0.22 + Math.random() * 0.16);
+    turnHoldUntil = elapsed + 2.2 + Math.random() * 1.6;
+  } else if (turnTarget !== 0 && elapsed > turnHoldUntil) {
+    turnTarget = 0;
+    nextTurnAt = elapsed + 9 + Math.random() * 9;
+  }
+  turnAngle += (turnTarget - turnAngle) * Math.min(1, dt * 1.1);
+  camera.rotation.y = turnAngle;
+
   if (gameActive) {
     demons.forEach((d) => {
       if (d.state === "gone") return;
       d.t += dt;
       if (d.t < 0) return;
 
-      if (d.state === "flying") {
+      if (d.state === "active") {
         d.sprite.position.z += d.vz * dt;
-        d.sprite.position.x = d.baseX + Math.sin(d.t * d.wobbleFreq + d.wobblePhase) * d.wobbleAmp;
-        d.sprite.position.y = d.baseY + Math.cos(d.t * d.wobbleFreq * 0.8 + d.wobblePhase) * d.wobbleAmp * 0.5;
-        d.wingPhase += dt * 11;
-        d.sprite.material.map = Math.floor(d.wingPhase) % 2 === 0 ? demonTex.fly1 : demonTex.fly2;
+
+        // erratic side-to-side wander: pick a new lateral target every so often
+        // and jerk toward it, instead of a smooth predictable sine wave
+        if (d.t > d.wanderNextAt) {
+          const range = d.type === "walking" ? 3.2 : 4.2;
+          d.wanderX = Math.max(-4.2, Math.min(4.2, d.baseX + (Math.random() * 2 - 1) * range));
+          d.wanderNextAt = d.t + 0.22 + Math.random() * 0.32;
+        }
+        const jerk = 1 - Math.pow(0.0002, dt); // fast, snappy approach — reads as erratic, not floaty
+        d.sprite.position.x += (d.wanderX - d.sprite.position.x) * jerk;
+
+        if (d.type === "walking") {
+          d.sprite.position.y = FLOOR_Y;
+          d.wingPhase += dt * 7;
+          d.sprite.material.map = Math.floor(d.wingPhase) % 2 === 0 ? demonTex.walk1 : demonTex.walk2;
+        } else {
+          d.sprite.position.y = d.baseY + Math.sin(d.t * 2.2) * d.wobbleAmp * 0.35;
+          d.wingPhase += dt * 11;
+          d.sprite.material.map = Math.floor(d.wingPhase) % 2 === 0 ? demonTex.fly1 : demonTex.fly2;
+        }
+
         if (d.sprite.position.z > ESCAPE_Z) {
           d.state = "gone";
           d.escaped = true;
@@ -326,10 +374,16 @@ function loop(now) {
     }
   }
 
-  // gun recoil + flash decay
+  // gun idle breathing sway + eased recoil kick that decays back to rest
+  recoilKick *= Math.pow(0.0015, dt); // fast exponential decay after firing
+  const breatheY = Math.sin(elapsed * 1.7) * 0.02 + Math.sin(elapsed * 0.85) * 0.012;
+  const breatheX = Math.sin(elapsed * 1.1) * 0.012;
+  gun.position.y = restY + breatheY - recoilKick * 0.22;
+  gun.position.z = restZ + recoilKick * 0.3;
+  gun.position.x = restX + breatheX;
+  gun.rotation.x = 0.02 - recoilKick * 0.16;
+
   const firing = performance.now() < gunFireUntil;
-  gun.position.y = restY + (firing ? -0.06 : 0);
-  gun.position.z = restZ + (firing ? 0.08 : 0);
   if (!firing && flash.scale.x > 0.001) {
     flash.scale.multiplyScalar(0.7);
     flashLight.intensity *= 0.7;
