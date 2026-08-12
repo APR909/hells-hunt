@@ -50,6 +50,7 @@ let turnAngle = 0;
 let turnTarget = 0;
 let turnHoldUntil = 0;
 let nextTurnAt = 5 + Math.random() * 5;
+let lastTurnDir = 1;
 gunScene.add(gun);
 const gunKeyLight = new THREE.DirectionalLight(0xffb070, 3.2);
 gunKeyLight.position.set(-1, 1.5, 1.5);
@@ -307,10 +308,12 @@ function loop(now) {
   lastTime = now;
   elapsed += dt;
 
-  corridor.update(dt, elapsed);
-
-  // occasional corridor bend: turn a little one way, hold, then straighten
-  if (turnTarget === 0 && elapsed > nextTurnAt) {
+  // occasional corridor bend: warn with a floor arrow, turn a little one way
+  // (banking the camera into it, like rounding a corner), hold, then straighten
+  const WARN_LEAD = 1.8;
+  if (turnTarget === 0 && elapsed > nextTurnAt - WARN_LEAD && elapsed < nextTurnAt) {
+    // warning window — arrow fades in ahead of the actual turn
+  } else if (turnTarget === 0 && elapsed > nextTurnAt) {
     turnTarget = (Math.random() < 0.5 ? -1 : 1) * (0.22 + Math.random() * 0.16);
     turnHoldUntil = elapsed + 2.2 + Math.random() * 1.6;
   } else if (turnTarget !== 0 && elapsed > turnHoldUntil) {
@@ -319,6 +322,20 @@ function loop(now) {
   }
   turnAngle += (turnTarget - turnAngle) * Math.min(1, dt * 1.1);
   camera.rotation.y = turnAngle;
+  camera.rotation.z = -turnAngle * 0.55; // bank into the turn, like rounding a corner
+  camera.position.x = -turnAngle * 1.6; // lean toward the inside of the bend
+
+  corridor.update(dt, elapsed, turnAngle);
+
+  // floor arrow: fades in during the warning window, stays lit through the
+  // turn, fades out once straight again
+  const warning = elapsed > nextTurnAt - WARN_LEAD && elapsed <= nextTurnAt;
+  const inTurn = turnTarget !== 0;
+  const arrowDir = turnTarget !== 0 ? Math.sign(turnTarget) : lastTurnDir;
+  if (turnTarget !== 0) lastTurnDir = Math.sign(turnTarget);
+  const arrowTargetOpacity = warning || inTurn ? 0.85 : 0;
+  corridor.arrow.material.opacity += (arrowTargetOpacity - corridor.arrow.material.opacity) * Math.min(1, dt * 4);
+  corridor.arrow.rotation.y = (-arrowDir * Math.PI) / 2;
 
   if (gameActive) {
     demons.forEach((d) => {

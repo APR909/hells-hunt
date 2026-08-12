@@ -13,12 +13,10 @@ export function buildCorridor(scene) {
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x2a1512, roughness: 0.85, metalness: 0.15 });
   const floorMat = new THREE.MeshStandardMaterial({ color: 0x1c0f0c, roughness: 0.9, metalness: 0.1 });
   const beamMat = new THREE.MeshStandardMaterial({ color: 0x141010, roughness: 0.6, metalness: 0.4 });
-  const stripMat = new THREE.MeshStandardMaterial({
-    color: 0x3a0a05,
-    emissive: 0xff3a10,
-    emissiveIntensity: 1.4,
-    roughness: 0.4,
+  const stripMatL = new THREE.MeshStandardMaterial({
+    color: 0x3a0a05, emissive: 0xff3a10, emissiveIntensity: 1.4, roughness: 0.4,
   });
+  const stripMatR = stripMatL.clone();
 
   // floor + ceiling
   const floorGeo = new THREE.PlaneGeometry(CORRIDOR_W, CORRIDOR_LENGTH);
@@ -68,10 +66,10 @@ export function buildCorridor(scene) {
     ring.add(rightBeam);
 
     // emergency light strips on the two side beams
-    const stripL = new THREE.Mesh(new THREE.BoxGeometry(0.15, CORRIDOR_H * 0.5, 0.15), stripMat);
+    const stripL = new THREE.Mesh(new THREE.BoxGeometry(0.15, CORRIDOR_H * 0.5, 0.15), stripMatL);
     stripL.position.set(-CORRIDOR_W / 2 + beamThickness + 0.1, 0, 0);
     ring.add(stripL);
-    const stripR = stripL.clone();
+    const stripR = new THREE.Mesh(new THREE.BoxGeometry(0.15, CORRIDOR_H * 0.5, 0.15), stripMatR);
     stripR.position.x = CORRIDOR_W / 2 - beamThickness - 0.1;
     ring.add(stripR);
 
@@ -88,24 +86,44 @@ export function buildCorridor(scene) {
   glow.position.set(0, 0, -CORRIDOR_LENGTH + 4);
   group.add(glow);
 
+  // directional bend-warning arrow — a floor chevron that lights up and
+  // points the way just before the corridor turns, so the turn reads as
+  // "rounding a corner" instead of the world silently spinning
+  const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffcf5a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+  const arrowShape = new THREE.Shape();
+  arrowShape.moveTo(-0.9, -0.5);
+  arrowShape.lineTo(0, 0.9);
+  arrowShape.lineTo(0.9, -0.5);
+  arrowShape.lineTo(0.35, -0.5);
+  arrowShape.lineTo(0.35, -1.6);
+  arrowShape.lineTo(-0.35, -1.6);
+  arrowShape.lineTo(-0.35, -0.5);
+  arrowShape.closePath();
+  const arrow = new THREE.Mesh(new THREE.ShapeGeometry(arrowShape), arrowMat);
+  arrow.rotation.x = -Math.PI / 2;
+  arrow.position.set(0, -CORRIDOR_H / 2 + 0.08, -4.5);
+  arrow.scale.setScalar(2.4);
+  group.add(arrow);
+
   scene.add(group);
 
   return {
     group,
     rings,
     glow,
-    update(dt, t) {
+    arrow,
+    update(dt, t, turnBias = 0) {
       rings.forEach((ring) => {
         ring.position.z += SCROLL_SPEED * dt;
         if (ring.position.z > 0) ring.position.z -= RING_COUNT * RING_SPACING;
       });
       // pulse the emergency strips and the distant glow
       const pulse = 1.1 + Math.sin(t * 3) * 0.5;
-      rings.forEach((ring) => {
-        ring.children.forEach((c) => {
-          if (c.material === stripMat) c.material.emissiveIntensity = pulse;
-        });
-      });
+      // during a turn, the strip on the turn's side flares brighter — a clear
+      // "this way" cue independent of camera pitch or the floor arrow
+      const boost = Math.abs(turnBias) * 3.5;
+      stripMatL.emissiveIntensity = pulse + (turnBias < 0 ? boost : 0);
+      stripMatR.emissiveIntensity = pulse + (turnBias > 0 ? boost : 0);
       glow.material.opacity = 0.45 + Math.sin(t * 1.6) * 0.15;
     },
   };
