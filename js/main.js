@@ -3,7 +3,7 @@ import { buildCorridor, setupLighting } from "./corridor.js";
 import { buildGun } from "./gun3d.js";
 import { playShot, playHit, playEmptyClick, playEscape, playRoundStart, playGameOver } from "./sound.js";
 
-const AMMO_PER_ROUND = 3;
+const AMMO_PER_ROUND = 5;
 const MAX_MISSES = 3;
 const SPRITE_SCALE = 2.1;
 const ESCAPE_Z = 1.5;
@@ -44,13 +44,6 @@ let recoilKick = 0;
 let aimYaw = 0;
 let aimPitch = 0;
 
-// periodic corridor "bend" — the camera eases into a shallow turn every so
-// often, holds it briefly, then straightens back out
-let turnAngle = 0;
-let turnTarget = 0;
-let turnHoldUntil = 0;
-let nextTurnAt = 5 + Math.random() * 5;
-let lastTurnDir = 1;
 gunScene.add(gun);
 const gunKeyLight = new THREE.DirectionalLight(0xffb070, 3.2);
 gunKeyLight.position.set(-1, 1.5, 1.5);
@@ -100,15 +93,17 @@ const titleFlapTimer = setInterval(() => {
 let score = 0;
 let round = 1;
 let ammo = AMMO_PER_ROUND;
+let maxAmmoThisRound = AMMO_PER_ROUND;
 let misses = 0;
 let demons = [];
 let roundState = "idle";
 let gameActive = false;
 
 function demonCountForRound(r) {
-  if (r <= 2) return 1;
-  if (r <= 5) return 2;
-  return 3;
+  if (r <= 2) return 2;
+  if (r <= 4) return 3;
+  if (r <= 7) return 4;
+  return 5;
 }
 
 const FLOOR_Y = -3.7;
@@ -151,11 +146,12 @@ function clearDemons() {
 }
 
 function startRound() {
-  ammo = AMMO_PER_ROUND;
   clearDemons();
   roundState = "spawning";
   roundValueEl.textContent = round;
   const count = demonCountForRound(round);
+  ammo = Math.max(AMMO_PER_ROUND, count + 2);
+  maxAmmoThisRound = ammo;
   for (let i = 0; i < count; i++) spawnDemon(i * 0.6);
   playRoundStart();
   flashRound(`RONDA ${round}`);
@@ -174,7 +170,7 @@ function flashMiss() {
 
 function updateHud() {
   scoreValueEl.textContent = score;
-  ammoDotsEl.innerHTML = Array.from({ length: AMMO_PER_ROUND })
+  ammoDotsEl.innerHTML = Array.from({ length: maxAmmoThisRound })
     .map((_, i) => `<span class="${i < ammo ? "" : "spent"}"></span>`)
     .join("");
   missDotsEl.innerHTML = Array.from({ length: MAX_MISSES })
@@ -308,34 +304,7 @@ function loop(now) {
   lastTime = now;
   elapsed += dt;
 
-  // occasional corridor bend: warn with a floor arrow, turn a little one way
-  // (banking the camera into it, like rounding a corner), hold, then straighten
-  const WARN_LEAD = 1.8;
-  if (turnTarget === 0 && elapsed > nextTurnAt - WARN_LEAD && elapsed < nextTurnAt) {
-    // warning window — arrow fades in ahead of the actual turn
-  } else if (turnTarget === 0 && elapsed > nextTurnAt) {
-    turnTarget = (Math.random() < 0.5 ? -1 : 1) * (0.22 + Math.random() * 0.16);
-    turnHoldUntil = elapsed + 2.2 + Math.random() * 1.6;
-  } else if (turnTarget !== 0 && elapsed > turnHoldUntil) {
-    turnTarget = 0;
-    nextTurnAt = elapsed + 9 + Math.random() * 9;
-  }
-  turnAngle += (turnTarget - turnAngle) * Math.min(1, dt * 1.1);
-  camera.rotation.y = turnAngle;
-  camera.rotation.z = -turnAngle * 0.55; // bank into the turn, like rounding a corner
-  camera.position.x = -turnAngle * 1.6; // lean toward the inside of the bend
-
-  corridor.update(dt, elapsed, turnAngle);
-
-  // floor arrow: fades in during the warning window, stays lit through the
-  // turn, fades out once straight again
-  const warning = elapsed > nextTurnAt - WARN_LEAD && elapsed <= nextTurnAt;
-  const inTurn = turnTarget !== 0;
-  const arrowDir = turnTarget !== 0 ? Math.sign(turnTarget) : lastTurnDir;
-  if (turnTarget !== 0) lastTurnDir = Math.sign(turnTarget);
-  const arrowTargetOpacity = warning || inTurn ? 0.85 : 0;
-  corridor.arrow.material.opacity += (arrowTargetOpacity - corridor.arrow.material.opacity) * Math.min(1, dt * 4);
-  corridor.arrow.rotation.y = (-arrowDir * Math.PI) / 2;
+  corridor.update(dt, elapsed);
 
   if (gameActive) {
     demons.forEach((d) => {

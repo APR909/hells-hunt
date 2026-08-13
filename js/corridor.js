@@ -7,8 +7,6 @@ const RING_COUNT = 10;
 const RING_SPACING = CORRIDOR_LENGTH / RING_COUNT;
 const SCROLL_SPEED = 6.5;
 
-const DOOR_OPEN_Z = -9;   // door starts rising once its ring gets this close
-const DOOR_SHUT_Z = -22;  // fully closed again by the time it's this far away
 const DOOR_H = CORRIDOR_H - 0.6;
 
 const texLoader = new THREE.TextureLoader();
@@ -141,49 +139,48 @@ export function buildCorridor(scene) {
   glow.position.set(0, 0, -CORRIDOR_LENGTH + 4);
   group.add(glow);
 
-  // directional bend-warning arrow — a floor chevron that lights up and
-  // points the way just before the corridor turns
-  const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffcf5a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
-  const arrowShape = new THREE.Shape();
-  arrowShape.moveTo(-0.9, -0.5);
-  arrowShape.lineTo(0, 0.9);
-  arrowShape.lineTo(0.9, -0.5);
-  arrowShape.lineTo(0.35, -0.5);
-  arrowShape.lineTo(0.35, -1.6);
-  arrowShape.lineTo(-0.35, -1.6);
-  arrowShape.lineTo(-0.35, -0.5);
-  arrowShape.closePath();
-  const arrow = new THREE.Mesh(new THREE.ShapeGeometry(arrowShape), arrowMat);
-  arrow.rotation.x = -Math.PI / 2;
-  arrow.position.set(0, -CORRIDOR_H / 2 + 0.08, -4.5);
-  arrow.scale.setScalar(2.4);
-  group.add(arrow);
-
   scene.add(group);
+
+  // door event state — doors are open by default; every ~30s one ring's
+  // door swings shut for a few seconds, then reopens
+  let eventPhase = "idle"; // idle | closed | opening
+  let eventRingIndex = -1;
+  let nextEventAt = 14;
+  let eventCloseUntil = 0;
 
   return {
     group,
     rings,
     glow,
-    arrow,
-    update(dt, t, turnBias = 0) {
-      rings.forEach((ring) => {
+    update(dt, t) {
+      if (eventPhase === "idle" && t > nextEventAt) {
+        eventRingIndex = Math.floor(Math.random() * RING_COUNT);
+        eventPhase = "closed";
+        eventCloseUntil = t + 3.5;
+      } else if (eventPhase === "closed" && t > eventCloseUntil) {
+        eventPhase = "opening";
+      }
+
+      rings.forEach((ring, i) => {
         ring.position.z += SCROLL_SPEED * dt;
         if (ring.position.z > 0) ring.position.z -= RING_COUNT * RING_SPACING;
 
-        // door opens as its ring nears the camera, shuts again once it's
-        // scrolled back out to the far end of the loop
-        const z = ring.position.z;
-        const targetOpen = z > DOOR_OPEN_Z ? 1 : z < DOOR_SHUT_Z ? 0 : ring.userData.doorOpen;
-        ring.userData.doorOpen += (targetOpen - ring.userData.doorOpen) * Math.min(1, dt * 2.2);
+        const isEventRing = i === eventRingIndex && eventPhase !== "idle";
+        const target = isEventRing && eventPhase === "closed" ? 0 : 1;
+        ring.userData.doorOpen += (target - ring.userData.doorOpen) * Math.min(1, dt * 2.2);
         ring.userData.door.position.y =
           -CORRIDOR_H / 2 + beamThickness + DOOR_H / 2 + ring.userData.doorOpen * DOOR_H;
       });
 
+      if (eventPhase === "opening" && rings[eventRingIndex].userData.doorOpen > 0.97) {
+        eventPhase = "idle";
+        eventRingIndex = -1;
+        nextEventAt = t + 30;
+      }
+
       const pulse = 1.1 + Math.sin(t * 3) * 0.5;
-      const boost = Math.abs(turnBias) * 3.5;
-      stripMatL.emissiveIntensity = pulse + (turnBias < 0 ? boost : 0);
-      stripMatR.emissiveIntensity = pulse + (turnBias > 0 ? boost : 0);
+      stripMatL.emissiveIntensity = pulse;
+      stripMatR.emissiveIntensity = pulse;
       glow.material.opacity = 0.45 + Math.sin(t * 1.6) * 0.15;
     },
   };
