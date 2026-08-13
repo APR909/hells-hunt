@@ -5,14 +5,40 @@ const CORRIDOR_W = 14;
 const CORRIDOR_H = 10;
 const RING_COUNT = 10;
 const RING_SPACING = CORRIDOR_LENGTH / RING_COUNT;
-const SCROLL_SPEED = 6.5; // world units per second
+const SCROLL_SPEED = 6.5;
+
+const DOOR_OPEN_Z = -9;   // door starts rising once its ring gets this close
+const DOOR_SHUT_Z = -22;  // fully closed again by the time it's this far away
+const DOOR_H = CORRIDOR_H - 0.6;
+
+const texLoader = new THREE.TextureLoader();
+function tileTexture(path, repeatX, repeatY) {
+  const tex = texLoader.load(path);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 
 export function buildCorridor(scene) {
   const group = new THREE.Group();
 
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x2a1512, roughness: 0.85, metalness: 0.15 });
-  const floorMat = new THREE.MeshStandardMaterial({ color: 0x1c0f0c, roughness: 0.9, metalness: 0.1 });
+  const wallTex = tileTexture("assets/textures/wall.png", 5, 2.2);
+  const wallTexSide = tileTexture("assets/textures/wall.png", 8, 2.2);
+  const floorTex = tileTexture("assets/textures/floor.png", 4, 16);
+  const hazardTex = tileTexture("assets/textures/hazard.png", 8, 1);
+  const skullTex = texLoader.load("assets/textures/skull.png");
+  skullTex.colorSpace = THREE.SRGBColorSpace;
+
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.85 });
+  const wallMatSide = new THREE.MeshStandardMaterial({ map: wallTexSide, roughness: 0.85 });
+  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9 });
+  const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x1a0505, roughness: 0.8 });
   const beamMat = new THREE.MeshStandardMaterial({ color: 0x141010, roughness: 0.6, metalness: 0.4 });
+  const doorMat = new THREE.MeshStandardMaterial({ color: 0x8a7358, roughness: 0.55, metalness: 0.35, emissive: 0x1a0e06, emissiveIntensity: 0.4 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0x5a1010, roughness: 0.6 });
+
   const stripMatL = new THREE.MeshStandardMaterial({
     color: 0x3a0a05, emissive: 0xff3a10, emissiveIntensity: 1.4, roughness: 0.4,
   });
@@ -25,24 +51,39 @@ export function buildCorridor(scene) {
   floor.position.set(0, -CORRIDOR_H / 2, -CORRIDOR_LENGTH / 2 + 5);
   group.add(floor);
 
-  const ceiling = new THREE.Mesh(floorGeo, wallMat);
+  const ceiling = new THREE.Mesh(floorGeo, ceilingMat);
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(0, CORRIDOR_H / 2, -CORRIDOR_LENGTH / 2 + 5);
   group.add(ceiling);
 
-  // side walls
+  // red ceiling trim strip, like the reference image's banner
+  const trim = new THREE.Mesh(new THREE.PlaneGeometry(CORRIDOR_W, 0.5), trimMat);
+  trim.rotation.x = Math.PI / 2;
+  trim.position.set(0, CORRIDOR_H / 2 - 0.01, -CORRIDOR_LENGTH / 2 + 5);
+  group.add(trim);
+
+  // side walls, textured tech-panels
   const wallGeo = new THREE.PlaneGeometry(CORRIDOR_LENGTH, CORRIDOR_H);
-  const leftWall = new THREE.Mesh(wallGeo, wallMat);
+  const leftWall = new THREE.Mesh(wallGeo, wallMatSide);
   leftWall.rotation.y = Math.PI / 2;
   leftWall.position.set(-CORRIDOR_W / 2, 0, -CORRIDOR_LENGTH / 2 + 5);
   group.add(leftWall);
 
-  const rightWall = new THREE.Mesh(wallGeo, wallMat);
+  const rightWall = new THREE.Mesh(wallGeo, wallMatSide);
   rightWall.rotation.y = -Math.PI / 2;
   rightWall.position.set(CORRIDOR_W / 2, 0, -CORRIDOR_LENGTH / 2 + 5);
   group.add(rightWall);
 
-  // scrolling structural rings — each is 4 beams forming a rectangle, plus 2 emissive strips
+  // hazard stripe skirting along the base of both walls
+  [-1, 1].forEach((side) => {
+    const strip = new THREE.Mesh(new THREE.PlaneGeometry(CORRIDOR_LENGTH, 0.5), new THREE.MeshStandardMaterial({ map: hazardTex, roughness: 0.6 }));
+    strip.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+    strip.position.set(side * (CORRIDOR_W / 2 - 0.02), -CORRIDOR_H / 2 + 0.3, -CORRIDOR_LENGTH / 2 + 5);
+    group.add(strip);
+  });
+
+  // scrolling structural rings — beams framing an archway, a door panel that
+  // rises open as it nears the camera, a skull lintel, and emergency strips
   const rings = [];
   const beamThickness = 0.5;
 
@@ -65,16 +106,30 @@ export function buildCorridor(scene) {
     rightBeam.position.x = CORRIDOR_W / 2 - beamThickness / 2;
     ring.add(rightBeam);
 
+    // door panel — fills the archway, slides up into the lintel to "open"
+    const door = new THREE.Mesh(new THREE.BoxGeometry(CORRIDOR_W - beamThickness * 2, DOOR_H, 0.3), doorMat);
+    door.position.set(0, -CORRIDOR_H / 2 + beamThickness + DOOR_H / 2, 0);
+    ring.add(door);
+
+    // skull lintel decoration above the archway (three, like the reference)
+    const skullMat = new THREE.MeshStandardMaterial({ map: skullTex, transparent: true, roughness: 0.7, emissive: 0x3a2410, emissiveIntensity: 0.3 });
+    [-1, 0, 1].forEach((sx) => {
+      const skull = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.9), skullMat);
+      skull.position.set(sx * 3, CORRIDOR_H / 2 - 1.3, 0.28);
+      ring.add(skull);
+    });
+
     // emergency light strips on the two side beams
     const stripL = new THREE.Mesh(new THREE.BoxGeometry(0.15, CORRIDOR_H * 0.5, 0.15), stripMatL);
-    stripL.position.set(-CORRIDOR_W / 2 + beamThickness + 0.1, 0, 0);
+    stripL.position.set(-CORRIDOR_W / 2 + beamThickness + 0.1, -0.6, 0);
     ring.add(stripL);
     const stripR = new THREE.Mesh(new THREE.BoxGeometry(0.15, CORRIDOR_H * 0.5, 0.15), stripMatR);
-    stripR.position.x = CORRIDOR_W / 2 - beamThickness - 0.1;
+    stripR.position.set(CORRIDOR_W / 2 - beamThickness - 0.1, -0.6, 0);
     ring.add(stripR);
 
     ring.position.z = -i * RING_SPACING;
-    ring.userData.baseIndex = i;
+    ring.userData.door = door;
+    ring.userData.doorOpen = 0;
     group.add(ring);
     rings.push(ring);
   }
@@ -87,8 +142,7 @@ export function buildCorridor(scene) {
   group.add(glow);
 
   // directional bend-warning arrow — a floor chevron that lights up and
-  // points the way just before the corridor turns, so the turn reads as
-  // "rounding a corner" instead of the world silently spinning
+  // points the way just before the corridor turns
   const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffcf5a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
   const arrowShape = new THREE.Shape();
   arrowShape.moveTo(-0.9, -0.5);
@@ -116,11 +170,17 @@ export function buildCorridor(scene) {
       rings.forEach((ring) => {
         ring.position.z += SCROLL_SPEED * dt;
         if (ring.position.z > 0) ring.position.z -= RING_COUNT * RING_SPACING;
+
+        // door opens as its ring nears the camera, shuts again once it's
+        // scrolled back out to the far end of the loop
+        const z = ring.position.z;
+        const targetOpen = z > DOOR_OPEN_Z ? 1 : z < DOOR_SHUT_Z ? 0 : ring.userData.doorOpen;
+        ring.userData.doorOpen += (targetOpen - ring.userData.doorOpen) * Math.min(1, dt * 2.2);
+        ring.userData.door.position.y =
+          -CORRIDOR_H / 2 + beamThickness + DOOR_H / 2 + ring.userData.doorOpen * DOOR_H;
       });
-      // pulse the emergency strips and the distant glow
+
       const pulse = 1.1 + Math.sin(t * 3) * 0.5;
-      // during a turn, the strip on the turn's side flares brighter — a clear
-      // "this way" cue independent of camera pitch or the floor arrow
       const boost = Math.abs(turnBias) * 3.5;
       stripMatL.emissiveIntensity = pulse + (turnBias < 0 ? boost : 0);
       stripMatR.emissiveIntensity = pulse + (turnBias > 0 ? boost : 0);
@@ -130,14 +190,14 @@ export function buildCorridor(scene) {
 }
 
 export function setupLighting(scene) {
-  const ambient = new THREE.AmbientLight(0x3a1a12, 1.4);
+  const ambient = new THREE.AmbientLight(0x4a2418, 3.2);
   scene.add(ambient);
 
-  const key = new THREE.PointLight(0xff6a30, 3.5, 22, 2);
+  const key = new THREE.PointLight(0xff8a50, 5, 26, 1.7);
   key.position.set(0, 1.5, -2);
   scene.add(key);
 
-  const rim = new THREE.PointLight(0xff2200, 2.2, 30, 2);
+  const rim = new THREE.PointLight(0xff3300, 3, 34, 1.7);
   rim.position.set(0, 0, -18);
   scene.add(rim);
 
