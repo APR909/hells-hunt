@@ -114,7 +114,7 @@ function demonCountForRound(r) {
 const FLOOR_Y = -3.7;
 
 function spawnDemon(delay = 0) {
-  const speed = 11 + round * 1.1 + Math.random() * 2.2;
+  const speed = 6 + round * 0.6 + Math.random() * 1.2;
   const isWalking = Math.random() < 0.4;
   const baseX = -4 + Math.random() * 8;
   const baseY = isWalking ? FLOOR_Y : -1.8 + Math.random() * 3.2;
