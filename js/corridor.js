@@ -154,9 +154,15 @@ export function buildCorridor(scene) {
     glow,
     update(dt, t) {
       if (eventPhase === "idle" && t > nextEventAt) {
-        eventRingIndex = Math.floor(Math.random() * RING_COUNT);
-        eventPhase = "closed";
-        eventCloseUntil = t + 3.5;
+        // only close a door that's currently far away, so it has plenty of
+        // time to fully reopen before it scrolls into the player's engagement
+        // zone — otherwise a demon could end up hidden right as it approaches
+        const farRings = rings.map((r, i) => i).filter((i) => rings[i].position.z < -30);
+        if (farRings.length > 0) {
+          eventRingIndex = farRings[Math.floor(Math.random() * farRings.length)];
+          eventPhase = "closed";
+          eventCloseUntil = t + 3.5;
+        }
       } else if (eventPhase === "closed" && t > eventCloseUntil) {
         eventPhase = "opening";
       }

@@ -189,7 +189,7 @@ function setFace(name, holdMs) {
 // ---------- gun firing animation ----------
 let gunFireUntil = 0;
 function triggerGunFire() {
-  gunFireUntil = performance.now() + 130;
+  gunFireUntil = performance.now() + 104;
   recoilKick = 1;
   flash.scale.set(1, 1, 1);
   flashLight.intensity = 4;
@@ -363,12 +363,20 @@ function loop(now) {
   }
 
   // gun idle breathing sway + eased recoil kick that decays back to rest
-  recoilKick *= Math.pow(0.0015, dt); // fast exponential decay after firing
+  recoilKick *= Math.pow(0.0015, dt * 1.2); // 20% faster recoil recovery -> higher effective fire rate
   const breatheY = Math.sin(elapsed * 1.7) * 0.02 + Math.sin(elapsed * 0.85) * 0.012;
   const breatheX = Math.sin(elapsed * 1.1) * 0.012;
-  gun.position.y = restY + breatheY - recoilKick * 0.22;
+
+  // walking sway — as if the player were striding forward: a side-to-side
+  // sway with a bob that doubles frequency (one small bob per footstep)
+  const walkCycle = elapsed * 3.4;
+  const walkSwayX = Math.sin(walkCycle) * 0.05;
+  const walkSwayY = Math.abs(Math.sin(walkCycle)) * 0.045;
+  const walkRoll = Math.sin(walkCycle) * 0.028;
+
+  gun.position.y = restY + breatheY + walkSwayY - recoilKick * 0.22;
   gun.position.z = restZ + recoilKick * 0.3;
-  gun.position.x = restX + breatheX;
+  gun.position.x = restX + breatheX + walkSwayX;
 
   // aim tracking: the gun swings to follow the crosshair, smoothed so it
   // trails slightly behind fast mouse movement instead of snapping
@@ -376,6 +384,7 @@ function loop(now) {
   aimPitch += (mouseNDC.y * 0.24 - aimPitch) * Math.min(1, dt * 9);
   gun.rotation.y = restRotY + aimYaw;
   gun.rotation.x = restRotX - recoilKick * 0.16 + aimPitch;
+  gun.rotation.z = walkRoll;
 
   const firing = performance.now() < gunFireUntil;
   if (!firing && flash.scale.x > 0.001) {
