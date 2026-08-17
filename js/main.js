@@ -1,7 +1,7 @@
 import * as THREE from "./vendor/three.module.min.js";
 import { buildCorridor, setupLighting } from "./corridor.js";
 import { buildGun } from "./gun3d.js";
-import { playShot, playHit, playEmptyClick, playEscape, playRoundStart, playGameOver } from "./sound.js";
+import { playShot, playHit, playEmptyClick, playEscape, playRoundStart, playGameOver, startMusic, toggleMusic } from "./sound.js";
 
 const AMMO_PER_ROUND = 5;
 const MAX_MISSES = 3;
@@ -292,8 +292,15 @@ document.getElementById("btnStart").addEventListener("click", () => {
   gameStageEl.classList.remove("hidden");
   resize();
   resetGame();
+  startMusic();
 });
 document.getElementById("btnRetry").addEventListener("click", resetGame);
+
+const btnMusicToggle = document.getElementById("btnMusicToggle");
+btnMusicToggle.addEventListener("click", () => {
+  const playing = toggleMusic();
+  btnMusicToggle.setAttribute("aria-pressed", String(playing));
+});
 
 // ---------- render loop ----------
 let lastTime = performance.now();
