@@ -35,7 +35,7 @@ const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 100);
 camera.position.set(0, 0, 2);
 
 const corridor = buildCorridor(scene);
-setupLighting(scene);
+const lighting = setupLighting(scene);
 
 const gunScene = new THREE.Scene();
 const gunCamera = new THREE.PerspectiveCamera(50, 1, 0.05, 10);
@@ -145,16 +145,28 @@ function clearDemons() {
   demons = [];
 }
 
+function themeIndexForRound(r) {
+  if (r <= 3) return 0;
+  if (r <= 6) return 1;
+  return 2;
+}
+
 function startRound() {
   clearDemons();
   roundState = "spawning";
   roundValueEl.textContent = round;
+
+  const themeIndex = themeIndexForRound(round);
+  const enteringNewZone = round > 1 && themeIndexForRound(round - 1) !== themeIndex;
+  corridor.setTheme(themeIndex);
+  lighting.setTheme(themeIndex);
+
   const count = demonCountForRound(round);
   ammo = Math.max(AMMO_PER_ROUND, count + 2);
   maxAmmoThisRound = ammo;
   for (let i = 0; i < count; i++) spawnDemon(i * 0.6);
   playRoundStart();
-  flashRound(`RONDA ${round}`);
+  flashRound(enteringNewZone ? corridor.themeName.toUpperCase() : `RONDA ${round}`);
   updateHud();
 }
 
