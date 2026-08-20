@@ -284,23 +284,34 @@ export function buildCorridor(scene) {
   };
 }
 
-export function setupLighting(scene) {
-  const ambient = new THREE.AmbientLight(THEMES[0].ambient, 3.9);
+export function setupLighting(scene, camera) {
+  const ambient = new THREE.AmbientLight(THEMES[0].ambient, 7.5);
   scene.add(ambient);
 
-  const key = new THREE.PointLight(THEMES[0].key, 5, 26, 1.7);
+  const key = new THREE.PointLight(THEMES[0].key, 9, 40, 1.3);
   key.position.set(0, 1.5, -2);
   scene.add(key);
 
-  const rim = new THREE.PointLight(THEMES[0].rim, 3, 34, 1.7);
+  const rim = new THREE.PointLight(THEMES[0].rim, 6, 50, 1.3);
   rim.position.set(0, 0, -18);
   scene.add(rim);
 
   // low, close-range light aimed at the floor near the player — the key/rim
   // lights sit up near ceiling height and barely reach the floor otherwise
-  const floorLight = new THREE.PointLight(THEMES[0].key, 3.2, 12, 1.6);
+  const floorLight = new THREE.PointLight(THEMES[0].key, 5, 16, 1.4);
   floorLight.position.set(0, -3.5, 0.5);
   scene.add(floorLight);
+
+  // a light that follows the camera, like a headlamp — keeps whatever is
+  // straight ahead reliably lit regardless of where the other fixed lights
+  // happen to fall relative to the scrolling corridor
+  const headlamp = new THREE.PointLight(0xffe8c0, 4.5, 20, 1.4);
+  if (camera) {
+    camera.add(headlamp);
+    scene.add(camera);
+  } else {
+    scene.add(headlamp);
+  }
 
   function setTheme(index) {
     const theme = THEMES[index];
@@ -311,7 +322,7 @@ export function setupLighting(scene) {
     floorLight.color.set(theme.key);
   }
 
-  return { ambient, key, rim, floorLight, setTheme };
+  return { ambient, key, rim, floorLight, headlamp, setTheme };
 }
 
 export const THEME_COUNT = THEMES.length;

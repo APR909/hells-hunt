@@ -35,7 +35,7 @@ const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 100);
 camera.position.set(0, 0, 2);
 
 const corridor = buildCorridor(scene);
-const lighting = setupLighting(scene);
+const lighting = setupLighting(scene, camera);
 
 // ---------- 2D Doom-style weapon sprite ----------
 // A flat pixel-art overlay instead of 3D geometry — animated purely with

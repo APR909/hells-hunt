@@ -171,10 +171,10 @@ canvas {
 .gun-sprite {
   position: absolute;
   left: 50%;
-  bottom: -2%;
-  width: 46%;
-  max-width: 340px;
-  transform: translate(-38%, 0);
+  bottom: 0;
+  width: 26%;
+  max-width: 190px;
+  transform: translate(-42%, 0);
   transform-origin: bottom center;
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
@@ -183,7 +183,7 @@ canvas {
   user-select: none;
 }
 @media (max-width: 720px) {
-  .gun-sprite { width: 58%; }
+  .gun-sprite { width: 36%; }
 }
 #scene3d, #scene {
   position: absolute;
