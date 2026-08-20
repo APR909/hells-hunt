@@ -19,26 +19,88 @@ function tileTexture(path, repeatX, repeatY) {
   return tex;
 }
 
+// Three visual zones the player pushes through as rounds climb — same
+// geometry throughout, only textures/colors/lighting swap, so the change
+// is cheap and instant with no rebuild.
+const THEMES = [
+  {
+    name: "base técnica",
+    wallTexPath: "assets/textures/wall.png",
+    floorTexPath: "assets/textures/floor.png",
+    wallRepeat: [5, 2.2],
+    wallSideRepeat: [8, 2.2],
+    floorRepeat: [4, 16],
+    ceiling: 0x1a0505,
+    beam: 0x141010,
+    door: 0x8a7358,
+    trim: 0x5a1010,
+    strip: 0xff3a10,
+    glow: 0xff5522,
+    ambient: 0x4a2418,
+    key: 0xff8a50,
+    rim: 0xff3300,
+  },
+  {
+    name: "cavernas de lava",
+    wallTexPath: "assets/textures/wall_cave.png",
+    floorTexPath: "assets/textures/floor_cave.png",
+    wallRepeat: [5, 2.2],
+    wallSideRepeat: [8, 2.2],
+    floorRepeat: [4, 16],
+    ceiling: 0x150806,
+    beam: 0x241408,
+    door: 0x4a2a14,
+    trim: 0x8a2a08,
+    strip: 0xff6a10,
+    glow: 0xff7722,
+    ambient: 0x5a2810,
+    key: 0xff9540,
+    rim: 0xff5500,
+  },
+  {
+    name: "osario",
+    wallTexPath: "assets/textures/wall_bone.png",
+    floorTexPath: "assets/textures/floor_bone.png",
+    wallRepeat: [6, 2.2],
+    wallSideRepeat: [9, 2.2],
+    floorRepeat: [4, 16],
+    ceiling: 0x180810,
+    beam: 0x1c1012,
+    door: 0x6a5040,
+    trim: 0x4a1030,
+    strip: 0xb03a8a,
+    glow: 0x8a2a60,
+    ambient: 0x3a1830,
+    key: 0xc06a90,
+    rim: 0x8a2050,
+  },
+];
+
+function loadThemeTextures(theme) {
+  return {
+    wallTex: tileTexture(theme.wallTexPath, ...theme.wallRepeat),
+    wallTexSide: tileTexture(theme.wallTexPath, ...theme.wallSideRepeat),
+    floorTex: tileTexture(theme.floorTexPath, ...theme.floorRepeat),
+  };
+}
+
 export function buildCorridor(scene) {
   const group = new THREE.Group();
 
-  const wallTex = tileTexture("assets/textures/wall.png", 5, 2.2);
-  const wallTexSide = tileTexture("assets/textures/wall.png", 8, 2.2);
-  const floorTex = tileTexture("assets/textures/floor.png", 4, 16);
-  const hazardTex = tileTexture("assets/textures/hazard.png", 8, 1);
+  const themeTex = THEMES.map(loadThemeTextures);
   const skullTex = texLoader.load("assets/textures/skull.png");
   skullTex.colorSpace = THREE.SRGBColorSpace;
+  const hazardTex = tileTexture("assets/textures/hazard.png", 8, 1);
 
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.85 });
-  const wallMatSide = new THREE.MeshStandardMaterial({ map: wallTexSide, roughness: 0.85 });
-  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9 });
-  const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x1a0505, roughness: 0.8 });
-  const beamMat = new THREE.MeshStandardMaterial({ color: 0x141010, roughness: 0.6, metalness: 0.4 });
-  const doorMat = new THREE.MeshStandardMaterial({ color: 0x8a7358, roughness: 0.55, metalness: 0.35, emissive: 0x1a0e06, emissiveIntensity: 0.4 });
-  const trimMat = new THREE.MeshStandardMaterial({ color: 0x5a1010, roughness: 0.6 });
+  const wallMatSide = new THREE.MeshStandardMaterial({ map: themeTex[0].wallTexSide, roughness: 0.85 });
+  const floorMat = new THREE.MeshStandardMaterial({ map: themeTex[0].floorTex, roughness: 0.75 });
+  const ceilingMat = new THREE.MeshStandardMaterial({ color: THEMES[0].ceiling, roughness: 0.8 });
+  const beamMat = new THREE.MeshStandardMaterial({ color: THEMES[0].beam, roughness: 0.6, metalness: 0.4 });
+  const doorMat = new THREE.MeshStandardMaterial({ color: THEMES[0].door, roughness: 0.55, metalness: 0.35, emissive: 0x1a0e06, emissiveIntensity: 0.4 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: THEMES[0].trim, roughness: 0.6 });
 
   const stripMatL = new THREE.MeshStandardMaterial({
-    color: 0x3a0a05, emissive: 0xff3a10, emissiveIntensity: 1.4, roughness: 0.4,
+    color: 0x3a0a05, emissive: THEMES[0].strip, emissiveIntensity: 1.4, roughness: 0.4,
   });
   const stripMatR = stripMatL.clone();
 
@@ -134,7 +196,7 @@ export function buildCorridor(scene) {
 
   // distant glow at the far end, suggesting an opening into hell
   const glowGeo = new THREE.PlaneGeometry(CORRIDOR_W * 0.8, CORRIDOR_H * 0.8);
-  const glowMat = new THREE.MeshBasicMaterial({ color: 0xff5522, transparent: true, opacity: 0.55 });
+  const glowMat = new THREE.MeshBasicMaterial({ color: THEMES[0].glow, transparent: true, opacity: 0.55 });
   const glow = new THREE.Mesh(glowGeo, glowMat);
   glow.position.set(0, 0, -CORRIDOR_LENGTH + 4);
   group.add(glow);
@@ -148,10 +210,40 @@ export function buildCorridor(scene) {
   let nextEventAt = 14;
   let eventCloseUntil = 0;
 
+  let currentThemeIndex = 0;
+
+  function setTheme(index) {
+    if (index === currentThemeIndex || !THEMES[index]) return;
+    currentThemeIndex = index;
+    const theme = THEMES[index];
+    const tex = themeTex[index];
+
+    wallMatSide.map = tex.wallTexSide;
+    wallMatSide.needsUpdate = true;
+    floorMat.map = tex.floorTex;
+    floorMat.needsUpdate = true;
+
+    ceilingMat.color.set(theme.ceiling);
+    beamMat.color.set(theme.beam);
+    doorMat.color.set(theme.door);
+    trimMat.color.set(theme.trim);
+
+    stripMatL.emissive.set(theme.strip);
+    stripMatR.emissive.set(theme.strip);
+    glowMat.color.set(theme.glow);
+  }
+
   return {
     group,
     rings,
     glow,
+    setTheme,
+    get themeCount() {
+      return THEMES.length;
+    },
+    get themeName() {
+      return THEMES[currentThemeIndex].name;
+    },
     update(dt, t) {
       if (eventPhase === "idle" && t > nextEventAt) {
         // only close a door that's currently far away, so it has plenty of
@@ -193,16 +285,36 @@ export function buildCorridor(scene) {
 }
 
 export function setupLighting(scene) {
-  const ambient = new THREE.AmbientLight(0x4a2418, 3.2);
+  const ambient = new THREE.AmbientLight(THEMES[0].ambient, 3.9);
   scene.add(ambient);
 
-  const key = new THREE.PointLight(0xff8a50, 5, 26, 1.7);
+  const key = new THREE.PointLight(THEMES[0].key, 5, 26, 1.7);
   key.position.set(0, 1.5, -2);
   scene.add(key);
 
-  const rim = new THREE.PointLight(0xff3300, 3, 34, 1.7);
+  const rim = new THREE.PointLight(THEMES[0].rim, 3, 34, 1.7);
   rim.position.set(0, 0, -18);
   scene.add(rim);
 
-  return { ambient, key, rim };
+  // low, close-range light aimed at the floor near the player — the key/rim
+  // lights sit up near ceiling height and barely reach the floor otherwise
+  const floorLight = new THREE.PointLight(THEMES[0].key, 3.2, 12, 1.6);
+  floorLight.position.set(0, -3.5, 0.5);
+  scene.add(floorLight);
+
+  function setTheme(index) {
+    const theme = THEMES[index];
+    if (!theme) return;
+    ambient.color.set(theme.ambient);
+    key.color.set(theme.key);
+    rim.color.set(theme.rim);
+    floorLight.color.set(theme.key);
+  }
+
+  return { ambient, key, rim, floorLight, setTheme };
+}
+
+export const THEME_COUNT = THEMES.length;
+export function themeNameAt(index) {
+  return THEMES[index]?.name ?? "";
 }

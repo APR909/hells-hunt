@@ -1,6 +1,5 @@
 import * as THREE from "./vendor/three.module.min.js";
 import { buildCorridor, setupLighting } from "./corridor.js";
-import { buildGun } from "./gun3d.js";
 import { playShot, playHit, playEmptyClick, playEscape, playRoundStart, playGameOver, startMusic, toggleMusic } from "./sound.js";
 
 const AMMO_PER_ROUND = 5;
@@ -24,6 +23,7 @@ const finalScoreTextEl = document.getElementById("finalScoreText");
 const titleDemonImg = document.getElementById("titleDemonImg");
 const faceImgEl = document.getElementById("faceImg");
 const crosshairEl = document.getElementById("crosshair");
+const gunSpriteEl = document.getElementById("gunSprite");
 
 // ---------- three.js setup ----------
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -35,23 +35,15 @@ const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 100);
 camera.position.set(0, 0, 2);
 
 const corridor = buildCorridor(scene);
-setupLighting(scene);
+const lighting = setupLighting(scene);
 
-const gunScene = new THREE.Scene();
-const gunCamera = new THREE.PerspectiveCamera(50, 1, 0.05, 10);
-const { gun, flash, flashLight, restX, restY, restZ, restRotX, restRotY } = buildGun();
+// ---------- 2D Doom-style weapon sprite ----------
+// A flat pixel-art overlay instead of 3D geometry — animated purely with
+// CSS transforms (bob, sway, recoil) and a texture swap for the fire frame,
+// matching the classic Doom weapon-HUD approach.
 let recoilKick = 0;
-let aimYaw = 0;
-let aimPitch = 0;
-
-gunScene.add(gun);
-const gunKeyLight = new THREE.DirectionalLight(0xffb070, 3.2);
-gunKeyLight.position.set(-1, 1.5, 1.5);
-gunScene.add(gunKeyLight);
-const gunFillLight = new THREE.DirectionalLight(0xff6a30, 1.4);
-gunFillLight.position.set(1, -0.5, 1);
-gunScene.add(gunFillLight);
-gunScene.add(new THREE.AmbientLight(0x603520, 2.2));
+let aimOffsetX = 0;
+let aimOffsetY = 0;
 
 function resize() {
   const w = canvasWrap.clientWidth;
@@ -59,8 +51,6 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  gunCamera.aspect = w / h;
-  gunCamera.updateProjectionMatrix();
 }
 window.addEventListener("resize", resize);
 
@@ -145,16 +135,28 @@ function clearDemons() {
   demons = [];
 }
 
+function themeIndexForRound(r) {
+  if (r <= 3) return 0;
+  if (r <= 6) return 1;
+  return 2;
+}
+
 function startRound() {
   clearDemons();
   roundState = "spawning";
   roundValueEl.textContent = round;
+
+  const themeIndex = themeIndexForRound(round);
+  const enteringNewZone = round > 1 && themeIndexForRound(round - 1) !== themeIndex;
+  corridor.setTheme(themeIndex);
+  lighting.setTheme(themeIndex);
+
   const count = demonCountForRound(round);
   ammo = Math.max(AMMO_PER_ROUND, count + 2);
   maxAmmoThisRound = ammo;
   for (let i = 0; i < count; i++) spawnDemon(i * 0.6);
   playRoundStart();
-  flashRound(`RONDA ${round}`);
+  flashRound(enteringNewZone ? corridor.themeName.toUpperCase() : `RONDA ${round}`);
   updateHud();
 }
 
@@ -189,10 +191,9 @@ function setFace(name, holdMs) {
 // ---------- gun firing animation ----------
 let gunFireUntil = 0;
 function triggerGunFire() {
-  gunFireUntil = performance.now() + 104;
+  gunFireUntil = performance.now() + 110;
   recoilKick = 1;
-  flash.scale.set(1, 1, 1);
-  flashLight.intensity = 4;
+  gunSpriteEl.src = "assets/gun-fire.png";
 }
 
 // ---------- crosshair + raycasting ----------
@@ -369,40 +370,35 @@ function loop(now) {
     }
   }
 
-  // gun idle breathing sway + eased recoil kick that decays back to rest
+  // idle breathing sway + eased recoil kick that decays back to rest
   recoilKick *= Math.pow(0.0015, dt * 1.2); // 20% faster recoil recovery -> higher effective fire rate
-  const breatheY = Math.sin(elapsed * 1.7) * 0.02 + Math.sin(elapsed * 0.85) * 0.012;
-  const breatheX = Math.sin(elapsed * 1.1) * 0.012;
+  const breatheY = Math.sin(elapsed * 1.7) * 2.2 + Math.sin(elapsed * 0.85) * 1.3;
+  const breatheX = Math.sin(elapsed * 1.1) * 1.4;
 
   // walking sway — as if the player were striding forward: a side-to-side
   // sway with a bob that doubles frequency (one small bob per footstep)
   const walkCycle = elapsed * 3.4;
-  const walkSwayX = Math.sin(walkCycle) * 0.05;
-  const walkSwayY = Math.abs(Math.sin(walkCycle)) * 0.045;
-  const walkRoll = Math.sin(walkCycle) * 0.028;
+  const walkSwayX = Math.sin(walkCycle) * 5.5;
+  const walkSwayY = Math.abs(Math.sin(walkCycle)) * 4.5;
 
-  gun.position.y = restY + breatheY + walkSwayY - recoilKick * 0.22;
-  gun.position.z = restZ + recoilKick * 0.3;
-  gun.position.x = restX + breatheX + walkSwayX;
+  // a small position nudge toward the crosshair — subtler than true aim
+  // tracking, closer to how modern doom-likes nudge a flat weapon sprite
+  aimOffsetX += (mouseNDC.x * 14 - aimOffsetX) * Math.min(1, dt * 9);
+  aimOffsetY += (-mouseNDC.y * 10 - aimOffsetY) * Math.min(1, dt * 9);
 
-  // aim tracking: the gun swings to follow the crosshair, smoothed so it
-  // trails slightly behind fast mouse movement instead of snapping
-  aimYaw += (mouseNDC.x * 0.34 - aimYaw) * Math.min(1, dt * 9);
-  aimPitch += (mouseNDC.y * 0.24 - aimPitch) * Math.min(1, dt * 9);
-  gun.rotation.y = restRotY + aimYaw;
-  gun.rotation.x = restRotX - recoilKick * 0.16 + aimPitch;
-  gun.rotation.z = walkRoll;
+  const offsetX = breatheX + walkSwayX + aimOffsetX;
+  const offsetY = -breatheY - walkSwayY + aimOffsetY + recoilKick * 26;
+  const kickScale = 1 + recoilKick * 0.05;
+  gunSpriteEl.style.transform =
+    `translate(calc(-38% + ${offsetX.toFixed(1)}px), ${offsetY.toFixed(1)}px) scale(${kickScale.toFixed(3)})`;
 
   const firing = performance.now() < gunFireUntil;
-  if (!firing && flash.scale.x > 0.001) {
-    flash.scale.multiplyScalar(0.7);
-    flashLight.intensity *= 0.7;
+  if (!firing && gunSpriteEl.src.includes("gun-fire")) {
+    gunSpriteEl.src = "assets/gun-idle.png";
   }
 
   renderer.clear();
   renderer.render(scene, camera);
-  renderer.clearDepth();
-  renderer.render(gunScene, gunCamera);
 
   requestAnimationFrame(loop);
 }

@@ -168,6 +168,23 @@ canvas {
   pointer-events: none;
   z-index: 5;
 }
+.gun-sprite {
+  position: absolute;
+  left: 50%;
+  bottom: -2%;
+  width: 46%;
+  max-width: 340px;
+  transform: translate(-38%, 0);
+  transform-origin: bottom center;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  pointer-events: none;
+  z-index: 4;
+  user-select: none;
+}
+@media (max-width: 720px) {
+  .gun-sprite { width: 58%; }
+}
 #scene3d, #scene {
   position: absolute;
   top: 0;
